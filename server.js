@@ -73,6 +73,8 @@ app.post("/webhook", (req, res) => {
               : "npm ci && npm run build && npm run start -- -p " + port;
             const npmCommand = shouldRunNpmCi
               ? npmCommands
+              : repo.includes("-api")
+              ? "npm run start -- -p " + port
               : "npm run build && npm run start -- -p " + port;
 
             if (port) {
