@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 const express = require("express");
 const bodyParser = require("body-parser");
 const simpleGit = require("simple-git");
@@ -50,6 +51,8 @@ app.post("/webhook", (req, res) => {
     Promise.all(updateRepoPromises)
       .then(() => {
         const packageFiles = ["package.json", "yarn.lock", "package-lock.json"];
+
+        // Check if any commit affects the package files
         const shouldRunNpmCi = payload.commits.some((commit) => {
           return commit.added
             .concat(commit.removed, commit.modified)
@@ -65,17 +68,23 @@ app.post("/webhook", (req, res) => {
             const port = process.env.PORT;
 
             console.log(
-              `Preparing to restart repository: ${repo} on port: ${port}`
+              `Preparing to restart repository: ${repo} on port: ${port}`,
             );
 
-            const npmCommands = repo.includes("-api")
-              ? "npm ci && npm run start -- -p " + port
-              : "npm ci && npm run build && npm run start -- -p " + port;
-            const npmCommand = shouldRunNpmCi
-              ? npmCommands
-              : repo.includes("-api")
-              ? "npm run start -- -p " + port
-              : "npm run build && npm run start -- -p " + port;
+            // Define common command parts
+            const killCommand = `ss -tulpn | grep ":${port}" | awk '{print $NF}' | cut -d',' -f2 | cut -d'=' -f2 | xargs kill -9`;
+            const startCommand = `npm run start -- -p ${port}`;
+            const buildCommand = `npm run build`;
+
+            // Define npm commands based on repo type and if npm ci should run
+            const npmCiCommand = repo.includes("-api")
+              ? `npm ci && ${killCommand} && ${startCommand}`
+              : `npm ci && ${buildCommand} && ${killCommand} && ${startCommand}`;
+            const npmNoCiCommand = repo.includes("-api")
+              ? `${killCommand} && ${startCommand}`
+              : `${buildCommand} && ${killCommand} && ${startCommand}`;
+
+            const npmCommand = shouldRunNpmCi ? npmCiCommand : npmNoCiCommand;
 
             if (port) {
               console.log(`Executing commands for ${repo}: ${npmCommand}`);
@@ -84,7 +93,7 @@ app.post("/webhook", (req, res) => {
                 (error, stdout, stderr) => {
                   if (error) {
                     console.error(
-                      `Error processing commands for ${repo}: ${error}`
+                      `Error processing commands for ${repo}: ${error}`,
                     );
                     reject(error);
                     return;
@@ -92,7 +101,7 @@ app.post("/webhook", (req, res) => {
                   console.log(`Command output for ${repo}: ${stdout}`);
                   console.error(`Command stderr for ${repo}: ${stderr}`);
                   resolve();
-                }
+                },
               );
             } else {
               console.error(`Port not defined in .env for ${repo}`);
