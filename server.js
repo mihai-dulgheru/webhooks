@@ -73,7 +73,7 @@ app.post("/webhook", (req, res) => {
 
             // Define common command parts
             const killCommand = `ss -tulpn | grep ":${port}" | awk '{print $NF}' | cut -d',' -f2 | cut -d'=' -f2 | xargs kill -9`;
-            const startCommand = `npm run start -- -p ${port}`;
+            const startCommand = `nohup npm run start -- -p ${port} > ${repoPath}/${repo}.log 2>&1 &`;
             const buildCommand = `npm run build`;
 
             // Define npm commands based on repo type and if npm ci should run
