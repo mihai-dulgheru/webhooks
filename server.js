@@ -15,7 +15,6 @@ app.use(bodyParser.json());
 
 app.post("/webhook", (req, res) => {
   const payload = req.body;
-  console.log("app.post ~ payload:", JSON.stringify(payload));
 
   // Check if the pushed branch is the one we're interested in
   if (payload.ref === `refs/heads/${branch}`) {
@@ -65,10 +64,6 @@ app.post("/webhook", (req, res) => {
           return new Promise((resolve, reject) => {
             const repoPath = repos[repo];
             process.chdir(repoPath);
-
-            // const envFilePath = path.join(repoPath, ".env");
-            // require("dotenv").config({ path: envFilePath });
-            // const port = process.env.PORT;
 
             const envFilePath = path.join(repoPath, ".env");
             const envFile = fs.readFileSync(envFilePath, "utf8");
