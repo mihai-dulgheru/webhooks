@@ -3,6 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const simpleGit = require("simple-git");
 const { exec } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
@@ -15,12 +16,12 @@ app.use(bodyParser.json());
 app.post("/webhook", (req, res) => {
   const payload = req.body;
   console.log("app.post ~ payload:", JSON.stringify(payload));
-  const repositoryName = payload.repository.name;
 
   // Check if the pushed branch is the one we're interested in
   if (payload.ref === `refs/heads/${branch}`) {
     const baseDir = "/var/www/demo.chesscoders.com";
     const repos = {};
+    const repositoryName = payload.repository.name;
     repos[repositoryName] = path.join(baseDir, repositoryName);
 
     const token = process.env.GITHUB_TOKEN;
@@ -63,12 +64,16 @@ app.post("/webhook", (req, res) => {
         const restartPromises = updatedRepos.map((repo) => {
           return new Promise((resolve, reject) => {
             const repoPath = repos[repo];
+            process.chdir(repoPath);
+
+            // const envFilePath = path.join(repoPath, ".env");
+            // require("dotenv").config({ path: envFilePath });
+            // const port = process.env.PORT;
 
             const envFilePath = path.join(repoPath, ".env");
-            console.log("returnnewPromise ~ envFilePath:", envFilePath);
-            require("dotenv").config({ path: envFilePath });
-            const port = process.env.PORT;
-            console.log("returnnewPromise ~ port:", port);
+            const envFile = fs.readFileSync(envFilePath, "utf8");
+            const portMatch = envFile.match(/PORT=(\d+)/);
+            const port = portMatch ? portMatch[1] : null;
 
             console.log(
               `Preparing to restart repository: ${repo} on port: ${port}`,
