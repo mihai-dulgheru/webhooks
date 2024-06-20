@@ -19,38 +19,24 @@ app.post("/webhook", (req, res) => {
   // Check if the pushed branch is the one we're interested in
   if (payload.ref === `refs/heads/${branch}`) {
     const baseDir = "/var/www/demo.chesscoders.com";
-    const repos = {};
     const repositoryName = payload.repository.name;
-    repos[repositoryName] = path.join(baseDir, repositoryName);
+    const repoPath = path.join(baseDir, repositoryName);
 
     const token = process.env.GITHUB_TOKEN;
     const repoBaseUrl = `https://chesscoders:${token}@github.com/chesscoders`;
 
-    const updatedRepos = [];
-    const updateRepoPromises = Object.keys(repos).map((repo) => {
-      const repoPath = repos[repo];
-      const git = simpleGit(repoPath);
+    const git = simpleGit(repoPath);
 
-      console.log(`Updating repository: ${repo}`);
-      process.chdir(repoPath);
+    console.log(`Updating repository: ${repositoryName}`);
+    process.chdir(repoPath);
 
-      return git
-        .checkout(branch)
-        .then(() => git.fetch(`${repoBaseUrl}/${repo}.git`, branch))
-        .then(() => git.pull(`${repoBaseUrl}/${repo}.git`, branch))
-        .then(() => {
-          console.log(`Repository ${repo} updated successfully.`);
-          updatedRepos.push(repo);
-        })
-        .catch((err) => {
-          console.error(`Failed to update ${repo}:`, err);
-        });
-    });
-
-    process.chdir(baseDir);
-
-    Promise.all(updateRepoPromises)
+    git
+      .checkout(branch)
+      .then(() => git.fetch(`${repoBaseUrl}/${repositoryName}.git`, branch))
+      .then(() => git.pull(`${repoBaseUrl}/${repositoryName}.git`, branch))
       .then(() => {
+        console.log(`Repository ${repositoryName} updated successfully.`);
+
         const packageFiles = ["package.json", "yarn.lock", "package-lock.json"];
 
         // Check if any commit affects the package files
@@ -60,72 +46,59 @@ app.post("/webhook", (req, res) => {
             .some((file) => packageFiles.includes(file));
         });
 
-        const restartPromises = updatedRepos.map((repo) => {
-          return new Promise((resolve, reject) => {
-            const repoPath = repos[repo];
-            process.chdir(repoPath);
+        const envFilePath = path.join(repoPath, ".env");
+        const envFile = fs.readFileSync(envFilePath, "utf8");
+        const portMatch = envFile.match(/PORT=(\d+)/);
+        const port = portMatch ? portMatch[1] : null;
 
-            const envFilePath = path.join(repoPath, ".env");
-            const envFile = fs.readFileSync(envFilePath, "utf8");
-            const portMatch = envFile.match(/PORT=(\d+)/);
-            const port = portMatch ? portMatch[1] : null;
+        console.log(
+          `Preparing to restart repository: ${repositoryName} on port: ${port}`,
+        );
 
-            console.log(
-              `Preparing to restart repository: ${repo} on port: ${port}`,
-            );
+        // Define common command parts
+        const killCommand = `ss -tulpn | grep ":${port}" | awk '{print $NF}' | cut -d',' -f2 | cut -d'=' -f2 | xargs kill -9`;
+        const startCommand = `nohup npm run start -- -p ${port} > ${repoPath}/${repositoryName}.log 2>&1 &`;
+        const buildCommand = `npm run build`;
 
-            // Define common command parts
-            const killCommand = `ss -tulpn | grep ":${port}" | awk '{print $NF}' | cut -d',' -f2 | cut -d'=' -f2 | xargs kill -9`;
-            const startCommand = `nohup npm run start -- -p ${port} > ${repoPath}/${repo}.log 2>&1 &`;
-            const buildCommand = `npm run build`;
+        // Determine commands to run based on repo type and if npm ci should run
+        const npmCiCommands = repositoryName.includes("-api")
+          ? `npm ci && ${killCommand} && ${startCommand}`
+          : `npm ci && ${buildCommand} && ${killCommand} && ${startCommand}`;
+        const npmNoCiCommands = repositoryName.includes("-api")
+          ? `${killCommand} && ${startCommand}`
+          : `${buildCommand} && ${killCommand} && ${startCommand}`;
 
-            // Define npm commands based on repo type and if npm ci should run
-            const npmCiCommand = repo.includes("-api")
-              ? `npm ci && ${killCommand} && ${startCommand}`
-              : `npm ci && ${buildCommand} && ${killCommand} && ${startCommand}`;
-            const npmNoCiCommand = repo.includes("-api")
-              ? `${killCommand} && ${startCommand}`
-              : `${buildCommand} && ${killCommand} && ${startCommand}`;
+        const npmCommands = shouldRunNpmCi ? npmCiCommands : npmNoCiCommands;
 
-            const npmCommand = shouldRunNpmCi ? npmCiCommand : npmNoCiCommand;
-
-            if (port) {
-              console.log(`Executing commands for ${repo}: ${npmCommand}`);
-              exec(
-                `cd ${repoPath} && ${npmCommand}`,
-                (error, stdout, stderr) => {
-                  if (error) {
-                    console.error(
-                      `Error processing commands for ${repo}: ${error}`,
-                    );
-                    reject(error);
-                    return;
-                  }
-                  console.log(`Command output for ${repo}: ${stdout}`);
-                  console.error(`Command stderr for ${repo}: ${stderr}`);
-                  resolve();
-                },
+        if (port) {
+          console.log(
+            `Executing commands for ${repositoryName}: ${npmCommands}`,
+          );
+          exec(npmCommands, (error, stdout, stderr) => {
+            if (error) {
+              console.error(
+                `Error processing commands for ${repositoryName}: ${error}`,
               );
-            } else {
-              console.error(`Port not defined in .env for ${repo}`);
-              reject(new Error(`Port not defined in .env for ${repo}`));
+              return res
+                .status(500)
+                .send(
+                  `Error processing commands for ${repositoryName}: ${error}`,
+                );
             }
-          });
-        });
-
-        Promise.all(restartPromises)
-          .then(() => {
-            console.log("All repositories restarted successfully.");
+            console.log(`Command output for ${repositoryName}: ${stdout}`);
+            console.error(`Command stderr for ${repositoryName}: ${stderr}`);
             res.status(200).send("Webhook received and processed.");
-          })
-          .catch((err) => {
-            console.error("Error processing restart promises:", err);
-            res.status(500).send("Error processing webhook.");
           });
+        } else {
+          console.error(`Port not defined in .env for ${repositoryName}`);
+          res
+            .status(500)
+            .send(`Port not defined in .env for ${repositoryName}`);
+        }
       })
       .catch((err) => {
-        console.error("Error processing update promises:", err);
-        res.status(500).send("Error processing webhook.");
+        console.error(`Failed to update ${repositoryName}:`, err);
+        res.status(500).send(`Failed to update ${repositoryName}: ${err}`);
       });
   } else {
     console.log(`Received push to a branch other than ${branch}. Ignoring.`);
