@@ -14,6 +14,7 @@ app.use(bodyParser.json());
 
 app.post("/webhook", (req, res) => {
   const payload = req.body;
+  console.log("app.post ~ payload:", JSON.stringify(payload));
   const repositoryName = payload.repository.name;
 
   // Check if the pushed branch is the one we're interested in
@@ -64,8 +65,10 @@ app.post("/webhook", (req, res) => {
             const repoPath = repos[repo];
 
             const envFilePath = path.join(repoPath, ".env");
+            console.log("returnnewPromise ~ envFilePath:", envFilePath);
             require("dotenv").config({ path: envFilePath });
             const port = process.env.PORT;
+            console.log("returnnewPromise ~ port:", port);
 
             console.log(
               `Preparing to restart repository: ${repo} on port: ${port}`,
