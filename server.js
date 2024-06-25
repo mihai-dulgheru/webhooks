@@ -8,7 +8,7 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const branch = "droplet";
+const branch = "beta";
 const port = 5000;
 
 const ongoingProcesses = {};
