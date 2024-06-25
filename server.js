@@ -30,6 +30,7 @@ app.post("/github", (req, res) => {
     const git = simpleGit(repoPath);
 
     console.log(`Received update for repository: ${repositoryName}`);
+    process.chdir(repoPath);
 
     // If there's an ongoing process for this repository and branch, kill it
     if (ongoingProcesses[repositoryName]) {
