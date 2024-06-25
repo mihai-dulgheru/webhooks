@@ -13,7 +13,7 @@ const port = 5000;
 
 app.use(bodyParser.json());
 
-app.post("/webhook", (req, res) => {
+app.post("/github", (req, res) => {
   const payload = req.body;
 
   // Check if the pushed branch is the one we're interested in
